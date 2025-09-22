@@ -11,6 +11,31 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 const urlRegex = /(https?:\/\/[^\s]+)/i;
 
+// 🟢 Helper: clean LinkedIn URLs
+function cleanLinkedInUrl(url) {
+  try {
+    const u = new URL(url);
+
+    // Case 1: If it's a feed/update/urn:li:activity link
+    if (u.pathname.includes("/feed/update/urn:li:activity")) {
+      const parts = u.pathname.split(":");
+      const activityId = parts[parts.length - 1];
+      if (activityId) {
+        return `https://www.linkedin.com/feed/update/${activityId}`;
+      }
+    }
+
+    // Case 2: Already a /posts/ link → leave it as-is
+    if (u.pathname.includes("/posts/")) {
+      return url;
+    }
+
+    return url;
+  } catch (err) {
+    return url;
+  }
+}
+
 // 🟢 Helper: get page title with fallbacks
 async function fetchPageTitle(url) {
   try {
@@ -85,12 +110,12 @@ function categorizeLink(url) {
 // 🟢 WhatsApp webhook
 app.post("/api/whatsapp-webhook", async (req, res) => {
   const from = req.body.From;
-  const body = (req.body.Body || "").trim().toLowerCase();
+  const body = (req.body.Body || "").trim();
 
   console.log(`📩 Message from ${from}: ${body}`);
 
   // ⚡ SHOW CONTENT
-  if (body === "show" || body === "show & clear") {
+  if (body.toLowerCase() === "show" || body.toLowerCase() === "show & clear") {
     try {
       const resp = await fetch(process.env.BASE44_ENTITY_URL, {
         method: "GET",
@@ -102,7 +127,6 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         return res.send("<Response><Message>📭 Inbox is empty</Message></Response>");
       }
 
-      // Limit to 5 for WhatsApp readability
       const preview = items
         .slice(0, 5)
         .map(
@@ -111,7 +135,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         )
         .join("\n");
 
-      if (body === "show & clear") {
+      if (body.toLowerCase() === "show & clear") {
         await fetch(process.env.BASE44_ENTITY_URL, {
           method: "DELETE",
           headers: { api_key: process.env.BASE44_API_KEY },
@@ -129,7 +153,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
   }
 
   // ⚡ CLEAR CONTENT (manual)
-  if (body === "clear") {
+  if (body.toLowerCase() === "clear") {
     try {
       const resp = await fetch(process.env.BASE44_ENTITY_URL, {
         method: "DELETE",
@@ -150,11 +174,12 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
   }
 
   const link = match[0];
+  const cleanedLink = link.includes("linkedin.com") ? cleanLinkedInUrl(link) : link;
 
   try {
-    const title = await fetchPageTitle(link);
-    const tags = generateTags(link);
-    const category = categorizeLink(link);
+    const title = await fetchPageTitle(cleanedLink);
+    const tags = generateTags(cleanedLink);
+    const category = categorizeLink(cleanedLink);
 
     const response = await fetch(process.env.BASE44_ENTITY_URL, {
       method: "POST",
@@ -164,7 +189,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
       },
       body: JSON.stringify({
         title,
-        url: link,
+        url: cleanedLink, // ✅ use cleaned link here
         type: "link",
         tags,
         category,
@@ -175,7 +200,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
     const data = await response.json();
     console.log("✅ Base44 saved:", JSON.stringify(data, null, 2));
 
-    return res.send("<Response><Message>📌 Saved to Content Inbox</Message></Response>");
+    return res.send(`<Response><Message>📌 Saved: ${title}</Message></Response>`);
   } catch (err) {
     console.error("❌ Error saving to Base44:", err);
     return res.send("<Response><Message>⚠️ Error saving content.</Message></Response>");
