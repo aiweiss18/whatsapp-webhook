@@ -193,6 +193,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         type: "link",
         tags,
         category,
+        status: "inbox", // ✅ new: default to inbox
         timestamp: new Date().toISOString(),
       }),
     });
@@ -204,6 +205,106 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
   } catch (err) {
     console.error("❌ Error saving to Base44:", err);
     return res.send("<Response><Message>⚠️ Error saving content.</Message></Response>");
+  }
+});
+
+// =============================
+// 🟢 Extra API routes for Base44 UI
+// =============================
+
+// Get all links (optionally filter by status/category)
+app.get("/links", async (req, res) => {
+  try {
+    const { status, category } = req.query;
+    const resp = await fetch(process.env.BASE44_ENTITY_URL, {
+      method: "GET",
+      headers: { api_key: process.env.BASE44_API_KEY },
+    });
+    let items = await resp.json();
+
+    if (status) items = items.filter(i => i.status === status);
+    if (category) items = items.filter(i => i.category === category);
+
+    res.json(items);
+  } catch (err) {
+    console.error("❌ Error fetching links:", err);
+    res.status(500).json({ error: "Failed to fetch links" });
+  }
+});
+
+// Get summary counts by category
+app.get("/links/summary", async (req, res) => {
+  try {
+    const resp = await fetch(process.env.BASE44_ENTITY_URL, {
+      method: "GET",
+      headers: { api_key: process.env.BASE44_API_KEY },
+    });
+    const items = await resp.json();
+
+    const summary = {};
+    items.forEach(i => {
+      const cat = i.category || "Other";
+      summary[cat] = (summary[cat] || 0) + 1;
+    });
+
+    res.json(summary);
+  } catch (err) {
+    console.error("❌ Error building summary:", err);
+    res.status(500).json({ error: "Failed to build summary" });
+  }
+});
+
+// Archive a link
+app.post("/links/:id/archive", async (req, res) => {
+  try {
+    const resp = await fetch(`${process.env.BASE44_ENTITY_URL}/${req.params.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        api_key: process.env.BASE44_API_KEY,
+      },
+      body: JSON.stringify({ status: "archived" }),
+    });
+    res.json(await resp.json());
+  } catch (err) {
+    console.error("❌ Error archiving:", err);
+    res.status(500).json({ error: "Failed to archive" });
+  }
+});
+
+// Unarchive a link
+app.post("/links/:id/unarchive", async (req, res) => {
+  try {
+    const resp = await fetch(`${process.env.BASE44_ENTITY_URL}/${req.params.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        api_key: process.env.BASE44_API_KEY,
+      },
+      body: JSON.stringify({ status: "inbox" }),
+    });
+    res.json(await resp.json());
+  } catch (err) {
+    console.error("❌ Error unarchiving:", err);
+    res.status(500).json({ error: "Failed to unarchive" });
+  }
+});
+
+// Mark link as viewed
+app.post("/links/:id/viewed", async (req, res) => {
+  try {
+    const resp = await fetch(`${process.env.BASE44_ENTITY_URL}/${req.params.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        api_key: process.env.BASE44_API_KEY,
+      },
+      body: JSON.stringify({ viewedAt: new Date().toISOString() }),
+    });
+    res.json(await resp.json());
+  } catch (err) {
+    console.error("❌ Error marking viewed:", err);
+    res.status(500).json({ error: "Failed to mark viewed" });
   }
 });
 
