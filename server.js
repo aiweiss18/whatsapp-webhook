@@ -3,6 +3,7 @@ import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import fetch from "node-fetch"; // for fetching webpage titles
 import { JSDOM } from "jsdom"; // parse HTML
+import { summarizeLink } from "./services/summarizeLink.js";
 
 dotenv.config();
 
@@ -129,11 +130,15 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
 
       const preview = items
         .slice(0, 5)
-        .map(
-          (i) =>
-            `- ${i.title || "Untitled"} (${i.category || "Other"}) [${(i.tags || []).join(", ")}]`
-        )
-        .join("\n");
+        .map(i => {
+          const baseLine = `- ${i.title || "Untitled"} (${i.category || "Other"}) [${(i.tags || []).join(", ")}]`;
+          if (i.summary) {
+            const snippet = i.summary.length > 100 ? `${i.summary.slice(0, 97)}…` : i.summary;
+            return `${baseLine}\n    ↳ ${snippet}`;
+          }
+          return baseLine;
+        })
+        .join("\n\n");
 
       if (body.toLowerCase() === "show & clear") {
         await fetch(process.env.BASE44_ENTITY_URL, {
@@ -177,9 +182,17 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
   const cleanedLink = link.includes("linkedin.com") ? cleanLinkedInUrl(link) : link;
 
   try {
-    const title = await fetchPageTitle(cleanedLink);
+    let summaryPayload = null;
+    try {
+      summaryPayload = await summarizeLink(cleanedLink);
+    } catch (summaryErr) {
+      console.warn("⚠️ summarizeLink failed, continuing without summary:", summaryErr);
+    }
+
+    const title = summaryPayload?.title || (await fetchPageTitle(cleanedLink));
     const tags = generateTags(cleanedLink);
     const category = categorizeLink(cleanedLink);
+    const summary = summaryPayload?.summary || null;
 
     const response = await fetch(process.env.BASE44_ENTITY_URL, {
       method: "POST",
@@ -195,6 +208,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         category,
         status: "inbox", // ✅ new: default to inbox
         timestamp: new Date().toISOString(),
+        summary,
       }),
     });
 
