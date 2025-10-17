@@ -10,8 +10,6 @@ export async function summarizeLink(url) {
   if (!url) throw new Error("summarizeLink: url is required");
   if (!process.env.OPENAI_API_KEY) throw new Error("summarizeLink: OPENAI_API_KEY missing");
 
-  console.log("summarizeLink: OPENAI key detected:", Boolean(process.env.OPENAI_API_KEY));
-
   const pageMeta = await fetchPageMetadata(url);
   const summary = await createOpenAiSummary({
     url,
@@ -63,9 +61,12 @@ async function fetchPageMetadata(url) {
 
 async function createOpenAiSummary({ url, title, description }) {
   const prompt = [
-    "You are a focused summarization agent.",
-    "Produce exactly one concise sentence (<=30 words) describing the linked content.",
-    "Do not fabricate facts; state if details are unknown.",
+    "You are a focused summarization agent for saved links.",
+    "Return exactly one concise sentence (<=30 words).",
+    "Use any supplied title, description, and URL slug to infer the topic.",
+    "If the content body is unavailable, state what is known (publisher, author, topic) rather than saying you cannot access it.",
+    "Mention when details are missing, but still provide the most useful clue possible.",
+    "Never include API keys or sensitive tokens.",
     "",
     `URL: ${url}`,
     `Title: ${title ?? "N/A"}`,
