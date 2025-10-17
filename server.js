@@ -108,6 +108,67 @@ function categorizeLink(url) {
   return "Other";
 }
 
+// 🟢 Helper: determine source label
+function determineSource(url) {
+  try {
+    const { hostname } = new URL(url);
+    const normalized = hostname.replace(/^www\./, "");
+    const mapping = {
+      "x.com": "X",
+      "twitter.com": "X",
+      "linkedin.com": "LinkedIn",
+      "lnkd.in": "LinkedIn",
+      "facebook.com": "Facebook",
+      "instagram.com": "Instagram",
+      "tiktok.com": "TikTok",
+      "youtube.com": "YouTube",
+      "youtu.be": "YouTube",
+      "spotify.com": "Spotify",
+      "podcasts.apple.com": "Apple Podcasts",
+      "nytimes.com": "The New York Times",
+      "wsj.com": "The Wall Street Journal",
+      "bbc.com": "BBC",
+      "cnn.com": "CNN",
+      "bloomberg.com": "Bloomberg",
+      "reuters.com": "Reuters",
+    };
+    if (mapping[normalized]) return mapping[normalized];
+
+    const base = normalized.split(".")[0];
+    if (!base) return "Unknown";
+    return base.replace(/[-_]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  } catch {
+    return "Unknown";
+  }
+}
+
+// 🟢 Helper: generate short title
+function generateLinkTitle(category, summaryText) {
+  const normalizedSummary = summaryText?.toLowerCase() || "";
+
+  if (normalizedSummary.includes("job") || normalizedSummary.includes("hiring"))
+    return "Job opportunity";
+  if (normalizedSummary.includes("webinar") || normalizedSummary.includes("event"))
+    return "Event highlight";
+  if (normalizedSummary.includes("podcast") || normalizedSummary.includes("episode"))
+    return "Podcast episode";
+  if (normalizedSummary.includes("video") || normalizedSummary.includes("clip"))
+    return "Video highlight";
+  if (normalizedSummary.includes("news") || normalizedSummary.includes("report"))
+    return "News article";
+
+  const categoryMap = {
+    "LinkedIn Posts": "LinkedIn update",
+    Social: "Social update",
+    Videos: "Video highlight",
+    Podcasts: "Podcast episode",
+    "News Articles": "News article",
+    Other: "Saved link",
+  };
+
+  return categoryMap[category] || "Saved link";
+}
+
 // 🟢 WhatsApp webhook
 app.post("/api/whatsapp-webhook", async (req, res) => {
   const from = req.body.From;
@@ -131,7 +192,8 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
       const preview = items
         .slice(0, 5)
         .map(i => {
-          const baseLine = `- ${i.title || "Untitled"} (${i.category || "Other"}) [${(i.tags || []).join(", ")}]`;
+          const tagsLabel = (i.tags || []).join(", ");
+          const baseLine = `- ${i.title || "Untitled"} — ${i.source || "Unknown"} (${i.category || "Other"})${tagsLabel ? ` [${tagsLabel}]` : ""}`;
           if (i.summary) {
             const snippet = i.summary.length > 100 ? `${i.summary.slice(0, 97)}…` : i.summary;
             return `${baseLine}\n    ↳ ${snippet}`;
@@ -193,6 +255,8 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
     const tags = generateTags(cleanedLink);
     const category = categorizeLink(cleanedLink);
     const summary = summaryPayload?.summary || null;
+    const shortTitle = generateLinkTitle(category, summary);
+    const source = determineSource(cleanedLink);
 
     const response = await fetch(process.env.BASE44_ENTITY_URL, {
       method: "POST",
@@ -201,7 +265,8 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         api_key: process.env.BASE44_API_KEY,
       },
       body: JSON.stringify({
-        title,
+        title: shortTitle,
+        pageTitle: title,
         url: cleanedLink, // ✅ use cleaned link here
         type: "link",
         tags,
@@ -209,6 +274,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         status: "inbox", // ✅ new: default to inbox
         timestamp: new Date().toISOString(),
         summary,
+        source,
       }),
     });
 
