@@ -17,6 +17,24 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 const urlRegex = /(https?:\/\/[^\s]+)/i;
 
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+const usersConfigPath = path.join(__dirname, "config", "users.json");
+let users = {};
+try {
+  const raw = fs.readFileSync(usersConfigPath, "utf-8");
+  users = JSON.parse(raw);
+} catch (err) {
+  console.warn("⚠️ Could not load config/users.json; sender names default to phone numbers.", err);
+}
+
+async function upsertUser(from, name) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Name is required");
+  users[from] = trimmed;
+  await fs.promises.mkdir(path.dirname(usersConfigPath), { recursive: true });
+  await fs.promises.writeFile(usersConfigPath, JSON.stringify(users, null, 2), "utf-8");
+}
+
 // 🟢 Helper: map WhatsApp sender to display name
 function resolveSenderName(from) {
   if (!from) return "Unknown";
@@ -188,6 +206,25 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
   const numMedia = Number(req.body.NumMedia || 0);
 
   console.log(`📩 Message from ${from}: ${body}`);
+
+  if (body.toLowerCase().startsWith("register")) {
+    const name = body.slice("register".length).trim();
+    if (!name) {
+      return res.send(
+        "<Response><Message>ℹ️ Send `register Your Name` so I know who you are.</Message></Response>"
+      );
+    }
+    try {
+      await upsertUser(from, name);
+      console.log(`✅ Registered ${from} as ${name}`);
+      return res.send(
+        `<Response><Message>👍 Thanks ${name}! I’ll tag future saves with your name.</Message></Response>`
+      );
+    } catch (err) {
+      console.error("❌ Failed to register user:", err);
+      return res.send("<Response><Message>⚠️ Could not save your name. Try again later.</Message></Response>");
+    }
+  }
 
   if (numMedia > 0) {
     try {
