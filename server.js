@@ -6,7 +6,9 @@ import { JSDOM } from "jsdom"; // parse HTML
 import { summarizeLink } from "./services/summarizeLink.js";
 import { downloadTwilioMedia } from "./services/downloadTwilioMedia.js";
 import { uploadBufferToCloudinary } from "./services/uploadToCloudinary.js";
-import users from "./config/users.json" assert { type: "json" };
+import fs from "fs";
+import path from "path";
+import url from "url";
 
 dotenv.config();
 
@@ -463,3 +465,12 @@ app.post("/links/:id/viewed", async (req, res) => {
 app.listen(3000, () => {
   console.log("🚀 Webhook server running on port 3000");
 });
+const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
+const usersConfigPath = path.join(__dirname, "config", "users.json");
+let users = {};
+try {
+  const raw = fs.readFileSync(usersConfigPath, "utf-8");
+  users = JSON.parse(raw);
+} catch (err) {
+  console.warn("⚠️ Could not load config/users.json; sender names default to phone numbers.", err);
+}
