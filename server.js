@@ -17,24 +17,6 @@ app.use(bodyParser.urlencoded({ extended: false }));
 
 const urlRegex = /(https?:\/\/[^\s]+)/i;
 
-const __dirname = path.dirname(url.fileURLToPath(import.meta.url));
-const usersConfigPath = path.join(__dirname, "config", "users.json");
-let users = {};
-try {
-  const raw = fs.readFileSync(usersConfigPath, "utf-8");
-  users = JSON.parse(raw);
-} catch (err) {
-  console.warn("⚠️ Could not load config/users.json; sender names default to phone numbers.", err);
-}
-
-async function upsertUser(from, name) {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error("Name is required");
-  users[from] = trimmed;
-  await fs.promises.mkdir(path.dirname(usersConfigPath), { recursive: true });
-  await fs.promises.writeFile(usersConfigPath, JSON.stringify(users, null, 2), "utf-8");
-}
-
 // 🟢 Helper: map WhatsApp sender to display name
 function resolveSenderName(from) {
   if (!from) return "Unknown";
