@@ -57,6 +57,7 @@ async function upsertUser(number, name) {
     category: "Profiles",
     tags: ["user"],
     status: "profile",
+    url: `https://whatsapp.me/${encodeURIComponent(number.replace("whatsapp:", ""))}`,
     timestamp: new Date().toISOString(),
   };
 
