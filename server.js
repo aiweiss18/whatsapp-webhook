@@ -6,9 +6,6 @@ import { JSDOM } from "jsdom"; // parse HTML
 import { summarizeLink } from "./services/summarizeLink.js";
 import { downloadTwilioMedia } from "./services/downloadTwilioMedia.js";
 import { uploadBufferToCloudinary } from "./services/uploadToCloudinary.js";
-import fs from "fs";
-import path from "path";
-import url from "url";
 
 dotenv.config();
 
@@ -16,6 +13,95 @@ const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 
 const urlRegex = /(https?:\/\/[^\s]+)/i;
+
+const users = {};
+const userRecords = new Map(); // whatsapp:number -> { id, name }
+
+async function loadUserMappings() {
+  if (!process.env.BASE44_ENTITY_URL || !process.env.BASE44_API_KEY) return;
+  try {
+    const resp = await fetch(process.env.BASE44_ENTITY_URL, {
+      method: "GET",
+      headers: { api_key: process.env.BASE44_API_KEY },
+    });
+    const items = await resp.json();
+    items
+      .filter(item => item.type === "user" && item.savedByNumber)
+      .forEach(item => {
+        const name =
+          item.name || item.title || item.summary || item.savedBy || item.savedByNumber;
+        users[item.savedByNumber] = name;
+        if (item.id) {
+          userRecords.set(item.savedByNumber, { id: item.id, name });
+        }
+      });
+    console.log(`✅ Loaded ${userRecords.size} registered WhatsApp users`);
+  } catch (err) {
+    console.warn("⚠️ Failed to load user mappings from Base44:", err);
+  }
+}
+
+loadUserMappings();
+
+async function upsertUser(number, name) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Name is required");
+
+  const payload = {
+    type: "user",
+    savedByNumber: number,
+    savedBy: trimmed,
+    name: trimmed,
+    title: trimmed,
+    summary: `WhatsApp registration for ${trimmed}`,
+    category: "Profiles",
+    tags: ["user"],
+    status: "profile",
+    timestamp: new Date().toISOString(),
+  };
+
+  if (!process.env.BASE44_ENTITY_URL || !process.env.BASE44_API_KEY) {
+    throw new Error("Base44 credentials missing");
+  }
+
+  let data;
+  const existing = userRecords.get(number);
+  if (existing?.id) {
+    const resp = await fetch(`${process.env.BASE44_ENTITY_URL}/${existing.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        api_key: process.env.BASE44_API_KEY,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Failed to update Base44 user (${resp.status}): ${text}`);
+    }
+    data = await resp.json();
+  } else {
+    const resp = await fetch(process.env.BASE44_ENTITY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        api_key: process.env.BASE44_API_KEY,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Failed to create Base44 user (${resp.status}): ${text}`);
+    }
+    data = await resp.json();
+    if (data?.id) {
+      userRecords.set(number, { id: data.id, name: trimmed });
+    }
+  }
+
+  users[number] = trimmed;
+  return trimmed;
+}
 
 // 🟢 Helper: map WhatsApp sender to display name
 function resolveSenderName(from) {
@@ -197,10 +283,10 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
       );
     }
     try {
-      await upsertUser(from, name);
-      console.log(`✅ Registered ${from} as ${name}`);
+      const savedName = await upsertUser(from, name);
+      console.log(`✅ Registered ${from} as ${savedName}`);
       return res.send(
-        `<Response><Message>👍 Thanks ${name}! I’ll tag future saves with your name.</Message></Response>`
+        `<Response><Message>👍 Thanks ${savedName}! I’ll tag future saves with your name.</Message></Response>`
       );
     } catch (err) {
       console.error("❌ Failed to register user:", err);
@@ -279,7 +365,8 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         return res.send("<Response><Message>📭 Inbox is empty</Message></Response>");
       }
 
-      const preview = items
+      const filteredItems = items.filter(i => i.type !== "user");
+      const preview = filteredItems
         .slice(0, 5)
         .map(i => {
           const tagsLabel = (i.tags || []).join(", ");
@@ -394,6 +481,7 @@ app.get("/links", async (req, res) => {
       headers: { api_key: process.env.BASE44_API_KEY },
     });
     let items = await resp.json();
+    items = items.filter(i => i.type !== "user");
 
     if (status) items = items.filter(i => i.status === status);
     if (category) items = items.filter(i => i.category === category);
@@ -412,7 +500,7 @@ app.get("/links/summary", async (req, res) => {
       method: "GET",
       headers: { api_key: process.env.BASE44_API_KEY },
     });
-    const items = await resp.json();
+    const items = (await resp.json()).filter(i => i.type !== "user");
 
     const summary = {};
     items.forEach(i => {
