@@ -4,6 +4,9 @@ import dotenv from "dotenv";
 import fetch from "node-fetch"; // for fetching webpage titles
 import { JSDOM } from "jsdom"; // parse HTML
 import { summarizeLink } from "./services/summarizeLink.js";
+import { downloadTwilioMedia } from "./services/downloadTwilioMedia.js";
+import { uploadBufferToCloudinary } from "./services/uploadToCloudinary.js";
+import users from "./config/users.json" assert { type: "json" };
 
 dotenv.config();
 
@@ -11,6 +14,12 @@ const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 
 const urlRegex = /(https?:\/\/[^\s]+)/i;
+
+// 🟢 Helper: map WhatsApp sender to display name
+function resolveSenderName(from) {
+  if (!from) return "Unknown";
+  return users[from] || from.replace("whatsapp:", "");
+}
 
 // 🟢 Helper: clean LinkedIn URLs
 function cleanLinkedInUrl(url) {
@@ -173,8 +182,68 @@ function generateLinkTitle(category, summaryText) {
 app.post("/api/whatsapp-webhook", async (req, res) => {
   const from = req.body.From;
   const body = (req.body.Body || "").trim();
+  const savedBy = resolveSenderName(from);
+  const numMedia = Number(req.body.NumMedia || 0);
 
   console.log(`📩 Message from ${from}: ${body}`);
+
+  if (numMedia > 0) {
+    try {
+      const caption = body || "";
+      const mediaResults = [];
+
+      for (let idx = 0; idx < numMedia; idx += 1) {
+        const mediaUrl = req.body[`MediaUrl${idx}`];
+        const mediaContentType = req.body[`MediaContentType${idx}`] || "image/jpeg";
+        const { buffer } = await downloadTwilioMedia(mediaUrl);
+        const upload = await uploadBufferToCloudinary(buffer, {
+          filename: `whatsapp-media-${Date.now()}-${idx}`,
+          contentType: mediaContentType,
+        });
+        mediaResults.push({
+          secureUrl: upload.secure_url,
+          contentType: mediaContentType,
+        });
+      }
+
+      await Promise.all(
+        mediaResults.map((media, idx) =>
+          fetch(process.env.BASE44_ENTITY_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              api_key: process.env.BASE44_API_KEY,
+            },
+            body: JSON.stringify({
+              title: caption || "Screenshot",
+              pageTitle: `Screenshot ${idx + 1}`,
+              url: media.secureUrl,
+              type: "image",
+              tags: ["screenshot"],
+              category: "Screenshots",
+              status: "inbox",
+              timestamp: new Date().toISOString(),
+              summary: caption || `Screenshot shared by ${savedBy}`,
+              source: "Screenshot",
+              savedBy,
+              savedByNumber: from,
+              mediaType: media.contentType,
+            }),
+          })
+        )
+      );
+
+      const plural = mediaResults.length > 1 ? "screenshots" : "screenshot";
+      return res.send(
+        `<Response><Message>🖼️ Saved ${mediaResults.length} ${plural} for ${savedBy}${
+          caption ? `\nCaption: ${caption}` : ""
+        }</Message></Response>`
+      );
+    } catch (err) {
+      console.error("❌ Error processing media:", err);
+      return res.send("<Response><Message>⚠️ Failed to save screenshot.</Message></Response>");
+    }
+  }
 
   // ⚡ SHOW CONTENT
   if (body.toLowerCase() === "show" || body.toLowerCase() === "show & clear") {
@@ -193,7 +262,8 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         .slice(0, 5)
         .map(i => {
           const tagsLabel = (i.tags || []).join(", ");
-          const baseLine = `- ${i.title || "Untitled"} — ${i.source || "Unknown"} (${i.category || "Other"})${tagsLabel ? ` [${tagsLabel}]` : ""}`;
+          const contributor = i.savedBy || "Unknown";
+          const baseLine = `- ${i.title || "Untitled"} — ${i.source || "Unknown"} (${i.category || "Other"})${tagsLabel ? ` [${tagsLabel}]` : ""} · by ${contributor}`;
           if (i.summary) {
             const snippet = i.summary.length > 100 ? `${i.summary.slice(0, 97)}…` : i.summary;
             return `${baseLine}\n    ↳ ${snippet}`;
@@ -275,6 +345,8 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         timestamp: new Date().toISOString(),
         summary,
         source,
+        savedBy,
+        savedByNumber: from,
       }),
     });
 

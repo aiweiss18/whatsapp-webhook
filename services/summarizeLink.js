@@ -1,5 +1,5 @@
 import fetch from "node-fetch";
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 
 /**
  * Fetches metadata for the provided URL and asks OpenAI for a single-sentence summary.
@@ -24,7 +24,11 @@ async function fetchPageMetadata(url) {
   try {
     const resp = await fetch(url, { timeout: 5000 });
     const html = await resp.text();
-    const dom = new JSDOM(html);
+    const virtualConsole = new VirtualConsole();
+    virtualConsole.on("error", () => {
+      /* Ignore parse errors from remote stylesheets/scripts */
+    });
+    const dom = new JSDOM(html, { virtualConsole });
     const { document } = dom.window;
 
     const titleSelectors = [
