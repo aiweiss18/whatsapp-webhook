@@ -413,10 +413,53 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
     }
   }
 
-  // ⚡ SAVE LINK
+  // ⚡ SAVE TEXT MESSAGE AS NOTE (for messages without URLs)
   const match = body.match(urlRegex);
+  
+  // If message contains text but no URL, save as a note
+  if (!match && body && body.trim().length > 0) {
+    try {
+      // Create title from first 8-10 words
+      const words = body.trim().split(/\s+/);
+      const title = words.slice(0, 10).join(' ') + (words.length > 10 ? '...' : '');
+
+      const response = await fetch(process.env.BASE44_ENTITY_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          api_key: process.env.BASE44_API_KEY,
+        },
+        body: JSON.stringify({
+          title: title,
+          summary: body,
+          type: "note",
+          savedBy: savedBy,
+          savedByNumber: from,
+          timestamp: new Date().toISOString(),
+          status: "inbox",
+          tags: ["whatsapp", "note"],
+          category: "Notes",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Base44 API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("✅ Note saved to Base44:", JSON.stringify(data, null, 2));
+
+      return res.send("<Response><Message>✅ Message saved to Base44.</Message></Response>");
+    } catch (err) {
+      console.error("❌ Error saving note to Base44:", err);
+      return res.send("<Response><Message>⚠️ Error saving message.</Message></Response>");
+    }
+  }
+
+  // ⚡ SAVE LINK (if URL is found)
   if (!match) {
-    return res.send("<Response><Message>⚠️ Please send a link.</Message></Response>");
+    // Empty message or no URL found
+    return res.send("<Response><Message>⚠️ Please send a message or link.</Message></Response>");
   }
 
   const link = match[0];
