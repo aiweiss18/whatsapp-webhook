@@ -2,6 +2,7 @@ import express from "express";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import fetch from "node-fetch"; // for fetching webpage titles
+import axios from "axios"; // for Base44 API requests
 import { JSDOM } from "jsdom"; // parse HTML
 import { summarizeLink } from "./services/summarizeLink.js";
 import { downloadTwilioMedia } from "./services/downloadTwilioMedia.js";
@@ -423,31 +424,25 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
       const words = body.trim().split(/\s+/);
       const title = words.slice(0, 10).join(' ') + (words.length > 10 ? '...' : '');
 
-      const response = await fetch(process.env.BASE44_ENTITY_URL, {
-        method: "POST",
+      // Create new ContentItem record in Base44 via axios POST
+      const response = await axios.post(process.env.BASE44_ENTITY_URL, {
+        title: title,
+        summary: body,
+        type: "note",
+        savedBy: from, // sender phone number
+        createdAt: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
+        status: "inbox",
+        tags: ["whatsapp", "note"],
+        category: "Notes",
+      }, {
         headers: {
           "Content-Type": "application/json",
-          api_key: process.env.BASE44_API_KEY,
+          "Authorization": `Bearer ${process.env.BASE44_API_KEY}`,
         },
-        body: JSON.stringify({
-          title: title,
-          summary: body,
-          type: "note",
-          savedBy: savedBy,
-          savedByNumber: from,
-          timestamp: new Date().toISOString(),
-          status: "inbox",
-          tags: ["whatsapp", "note"],
-          category: "Notes",
-        }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Base44 API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("✅ Note saved to Base44:", JSON.stringify(data, null, 2));
+      console.log("✅ Note saved to Base44:", JSON.stringify(response.data, null, 2));
 
       return res.send("<Response><Message>✅ Message saved to Base44.</Message></Response>");
     } catch (err) {
