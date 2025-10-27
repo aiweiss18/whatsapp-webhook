@@ -6,3 +6,4 @@ base44-gpt-helper/
 
 base44-gpt-helper/
 .DS_Store
+.env
