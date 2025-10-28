@@ -516,6 +516,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         pageTitle: title,
         summary: body,
         content: body,
+        url: `https://whatsapp.local/${encodeURIComponent(title.replace(/\s+/g, "-").toLowerCase())}`,
         type: "note",
         status: "inbox",
         timestamp: new Date().toISOString(),
