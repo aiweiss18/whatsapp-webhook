@@ -21,6 +21,68 @@ const NOTE_PREFIXES = {
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+function getTimezone() {
+  return process.env.APP_TIMEZONE || "America/New_York";
+}
+
+function slugify(value) {
+  if (!value) return "note";
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "note";
+}
+
+function extractParts(formatter, date) {
+  return formatter.formatToParts(date).reduce((acc, part) => {
+    if (part.type !== "literal") {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+}
+
+function currentTimestamp() {
+  const timeZone = getTimezone();
+  const now = new Date();
+
+  try {
+    const baseFormatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+
+    const parts = extractParts(baseFormatter, now);
+    const tzFormatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      timeZoneName: "longOffset",
+    });
+
+    const offsetRaw =
+      tzFormatter
+        .formatToParts(now)
+        .find(part => part.type === "timeZoneName")?.value || "UTC";
+
+    let offset = "Z";
+    if (offsetRaw && offsetRaw !== "UTC" && offsetRaw !== "GMT") {
+      offset = offsetRaw.startsWith("GMT") ? offsetRaw.slice(3) : offsetRaw;
+    }
+
+    const { year, month, day, hour, minute, second } = parts;
+    return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`;
+  } catch (err) {
+    console.warn("⚠️ Failed to format timestamp with timezone, falling back to UTC:", err);
+    return now.toISOString();
+  }
+}
+
 function parseIncomingMessage(rawBody) {
   const trimmed = (rawBody || "").trim();
   if (!trimmed) {
@@ -51,7 +113,7 @@ async function sendNoteToBase44({ content, tag }) {
   const payload = {
     content,
     source: "whatsapp",
-    created_at: new Date().toISOString(),
+    created_at: currentTimestamp(),
     tags: [tag],
   };
 
@@ -125,7 +187,7 @@ async function upsertUser(number, name) {
     tags: ["user"],
     status: "profile",
     url: `https://whatsapp.me/${encodeURIComponent(number.replace("whatsapp:", ""))}`,
-    timestamp: new Date().toISOString(),
+    timestamp: currentTimestamp(),
   };
 
   if (!process.env.BASE44_ENTITY_URL || !process.env.BASE44_API_KEY) {
@@ -421,7 +483,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
               tags: ["screenshot"],
               category: "Screenshots",
               status: "inbox",
-              timestamp: new Date().toISOString(),
+              timestamp: currentTimestamp(),
               summary: caption || `Screenshot shared by ${savedBy}`,
               source: "Screenshot",
               savedBy,
@@ -516,10 +578,10 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         pageTitle: title,
         summary: body,
         content: body,
-        url: `https://whatsapp.local/${encodeURIComponent(title.replace(/\s+/g, "-").toLowerCase())}`,
+        url: `https://whatsapp.local/${slugify(title)}`,
         type: "note",
         status: "inbox",
-        timestamp: new Date().toISOString(),
+        timestamp: currentTimestamp(),
         tags: ["whatsapp", "note"],
         category: "Notes",
         savedBy,
@@ -591,7 +653,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         tags,
         category,
         status: "inbox", // ✅ new: default to inbox
-        timestamp: new Date().toISOString(),
+        timestamp: currentTimestamp(),
         summary,
         source,
         savedBy,
@@ -701,7 +763,7 @@ app.post("/links/:id/viewed", async (req, res) => {
         "Content-Type": "application/json",
         api_key: process.env.BASE44_API_KEY,
       },
-      body: JSON.stringify({ viewedAt: new Date().toISOString() }),
+      body: JSON.stringify({ viewedAt: currentTimestamp() }),
     });
     res.json(await resp.json());
   } catch (err) {
