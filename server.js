@@ -2,7 +2,6 @@ import express from "express";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import fetch from "node-fetch"; // for fetching webpage titles
-import axios from "axios"; // for Base44 API requests
 import { JSDOM } from "jsdom"; // parse HTML
 import { summarizeLink } from "./services/summarizeLink.js";
 import { downloadTwilioMedia } from "./services/downloadTwilioMedia.js";
@@ -14,6 +13,73 @@ const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 
 const urlRegex = /(https?:\/\/[^\s]+)/i;
+
+const NOTE_PREFIXES = {
+  todo: "todo",
+  note: "note",
+};
+
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function parseIncomingMessage(rawBody) {
+  const trimmed = (rawBody || "").trim();
+  if (!trimmed) {
+    return { tag: "note", content: "" };
+  }
+
+  const prefixMatch = trimmed.match(/^(todo|note):\s*/i);
+  if (!prefixMatch) {
+    return { tag: "note", content: trimmed };
+  }
+
+  const matchedPrefix = prefixMatch[1].toLowerCase();
+  const remaining = trimmed.slice(prefixMatch[0].length).trim();
+  return {
+    tag: NOTE_PREFIXES[matchedPrefix] || "note",
+    content: remaining || trimmed,
+  };
+}
+
+async function sendNoteToBase44({ content, tag }) {
+  if (!process.env.BASE44_API_URL) {
+    throw new Error("BASE44_API_URL is not configured");
+  }
+  if (!process.env.BASE44_API_KEY) {
+    throw new Error("BASE44_API_KEY is not configured");
+  }
+
+  const payload = {
+    content,
+    source: "whatsapp",
+    created_at: new Date().toISOString(),
+    tags: [tag],
+  };
+
+  const requestInit = {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.BASE44_API_KEY}`,
+    },
+    body: JSON.stringify(payload),
+  };
+
+  const execute = async () => {
+    const resp = await fetch(process.env.BASE44_API_URL, requestInit);
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Base44 responded ${resp.status}: ${text}`);
+    }
+  };
+
+  try {
+    await execute();
+  } catch (err) {
+    console.warn("⚠️ Failed to send note to Base44, retrying in 5s:", err.message);
+    await delay(5000);
+    await execute();
+  }
+}
 
 const users = {};
 const userRecords = new Map(); // whatsapp:number -> { id, name }
@@ -268,6 +334,30 @@ function generateLinkTitle(category, summaryText) {
   return categoryMap[category] || "Saved link";
 }
 
+app.post("/whatsapp-webhook", async (req, res) => {
+  try {
+    const { tag, content } = parseIncomingMessage(req.body.Body);
+
+    if (!content) {
+      console.warn("⚠️ Received WhatsApp message with no body");
+      return res
+        .status(400)
+        .send("<Response><Message>Message body is required.</Message></Response>");
+    }
+
+    await sendNoteToBase44({ content, tag });
+
+    return res
+      .status(200)
+      .send("<Response><Message>✅ Saved your note to Base44.</Message></Response>");
+  } catch (err) {
+    console.error("❌ Failed to forward WhatsApp message to Base44:", err);
+    return res
+      .status(502)
+      .send("<Response><Message>⚠️ Could not save your note. Try again later.</Message></Response>");
+  }
+});
+
 // 🟢 WhatsApp webhook
 app.post("/api/whatsapp-webhook", async (req, res) => {
   const from = req.body.From;
@@ -420,33 +510,44 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
   // If message contains text but no URL, save as a note
   if (!match && body && body.trim().length > 0) {
     try {
-      // Create title from first 8-10 words
-      const words = body.trim().split(/\s+/);
-      const title = words.slice(0, 10).join(' ') + (words.length > 10 ? '...' : '');
-
-      // Create new ContentItem record in Base44 via axios POST
-      const response = await axios.post(process.env.BASE44_ENTITY_URL, {
-        title: title,
+      const title = body.slice(0, 60) || "Untitled";
+      const payload = {
+        title,
+        pageTitle: title,
         summary: body,
+        content: body,
         type: "note",
-        savedBy: from, // sender phone number
-        createdAt: new Date().toISOString(),
-        timestamp: new Date().toISOString(),
         status: "inbox",
+        timestamp: new Date().toISOString(),
         tags: ["whatsapp", "note"],
         category: "Notes",
-      }, {
+        savedBy,
+        savedByNumber: from,
+        source: "WhatsApp Note",
+      };
+
+      const response = await fetch(process.env.BASE44_ENTITY_URL, {
+        method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.BASE44_API_KEY}`,
+          api_key: process.env.BASE44_API_KEY,
         },
+        body: JSON.stringify(payload),
       });
 
-      console.log("✅ Note saved to Base44:", JSON.stringify(response.data, null, 2));
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ Base44 API returned ${response.status}:`, errorText);
+        console.error("❌ Payload that failed:", JSON.stringify(payload, null, 2));
+        throw new Error(`Base44 API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log("✅ Note saved to Base44:", JSON.stringify(data, null, 2));
 
       return res.send("<Response><Message>✅ Message saved to Base44.</Message></Response>");
     } catch (err) {
-      console.error("❌ Error saving note to Base44:", err);
+      console.error("❌ Error saving note to Base44:", err.message);
       return res.send("<Response><Message>⚠️ Error saving message.</Message></Response>");
     }
   }
