@@ -92,6 +92,7 @@ async function createOpenAiSummary({ url, title, description }) {
       max_tokens: 120,
       temperature: 0.4,
     }),
+    timeout: 10000, // 10 second timeout
   });
 
   if (!resp.ok) {

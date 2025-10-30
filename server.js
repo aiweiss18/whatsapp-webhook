@@ -10,7 +10,7 @@ import { uploadBufferToCloudinary } from "./services/uploadToCloudinary.js";
 dotenv.config();
 
 const app = express();
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.urlencoded({ extended: false, limit: '10mb' }));
 
 const urlRegex = /(https?:\/\/[^\s]+)/i;
 
