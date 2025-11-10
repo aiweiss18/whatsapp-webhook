@@ -35,6 +35,16 @@ function slugify(value) {
     .slice(0, 60) || "note";
 }
 
+function escapeXml(unsafe) {
+  if (!unsafe) return "";
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
 function extractParts(formatter, date) {
   return formatter.formatToParts(date).reduce((acc, part) => {
     if (part.type !== "literal") {
@@ -557,11 +567,14 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         .slice(0, 5)
         .map(i => {
           const tagsLabel = (i.tags || []).join(", ");
-          const contributor = i.savedBy || "Unknown";
-          const baseLine = `- ${i.title || "Untitled"} — ${i.source || "Unknown"} (${i.category || "Other"})${tagsLabel ? ` [${tagsLabel}]` : ""} · by ${contributor}`;
+          const contributor = escapeXml(i.savedBy || "Unknown");
+          const title = escapeXml(i.title || "Untitled");
+          const source = escapeXml(i.source || "Unknown");
+          const category = escapeXml(i.category || "Other");
+          const baseLine = `- ${title} — ${source} (${category})${tagsLabel ? ` [${tagsLabel}]` : ""} · by ${contributor}`;
           if (i.summary) {
             const snippet = i.summary.length > 100 ? `${i.summary.slice(0, 97)}…` : i.summary;
-            return `${baseLine}\n    ↳ ${snippet}`;
+            return `${baseLine}\n    ↳ ${escapeXml(snippet)}`;
           }
           return baseLine;
         })
@@ -635,13 +648,15 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         .map(([category, categoryItems]) => {
           const itemsList = categoryItems
             .map(i => {
-              const contributor = i.savedBy || "Unknown";
+              const contributor = escapeXml(i.savedBy || "Unknown");
+              const title = escapeXml(i.title || "Untitled");
+              const source = escapeXml(i.source || "Unknown");
               const timeAgo = formatTimeAgo(i.timestamp);
               const timeLabel = timeAgo ? ` [${timeAgo}]` : "";
-              return `  • ${i.title || "Untitled"} (${i.source || "Unknown"}) · ${contributor}${timeLabel}`;
+              return `  • ${title} (${source}) · ${contributor}${timeLabel}`;
             })
             .join("\n");
-          return `📁 ${category} (${categoryItems.length})\n${itemsList}`;
+          return `📁 ${escapeXml(category)} (${categoryItems.length})\n${itemsList}`;
         })
         .join("\n\n");
 
@@ -707,7 +722,9 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
       const data = await response.json();
       console.log("✅ Note saved to Base44:", JSON.stringify(data, null, 2));
 
-      return res.send(`<Response><Message>✅ Saved to ${detectedCategory.category}: ${detectedCategory.title}</Message></Response>`);
+      const safeCategory = escapeXml(detectedCategory.category);
+      const safeTitle = escapeXml(detectedCategory.title);
+      return res.send(`<Response><Message>✅ Saved to ${safeCategory}: ${safeTitle}</Message></Response>`);
     } catch (err) {
       console.error("❌ Error saving note to Base44:", err.message);
       return res.send("<Response><Message>⚠️ Error saving message.</Message></Response>");
@@ -763,7 +780,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
     const data = await response.json();
     console.log("✅ Base44 saved:", JSON.stringify(data, null, 2));
 
-    return res.send(`<Response><Message>📌 Saved: ${title}</Message></Response>`);
+    return res.send(`<Response><Message>📌 Saved: ${escapeXml(title)}</Message></Response>`);
   } catch (err) {
     console.error("❌ Error saving to Base44:", err);
     return res.send("<Response><Message>⚠️ Error saving content.</Message></Response>");
