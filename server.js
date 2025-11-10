@@ -742,17 +742,30 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
 
   try {
     let summaryPayload = null;
+    let aiGeneratedTitle = null;
+    let originalPageTitle = null;
+    let summary = null;
+
+    // Try to get AI-enhanced summary and title
     try {
       summaryPayload = await summarizeLink(cleanedLink);
+      aiGeneratedTitle = summaryPayload?.title;
+      originalPageTitle = summaryPayload?.pageTitle;
+      summary = summaryPayload?.summary;
+      console.log(`🤖 AI generated title: "${aiGeneratedTitle}"`);
+      console.log(`🤖 AI summary: "${summary}"`);
     } catch (summaryErr) {
-      console.warn("⚠️ summarizeLink failed, continuing without summary:", summaryErr);
+      console.warn("⚠️ summarizeLink failed, using fallbacks:", summaryErr.message);
     }
 
-    const title = summaryPayload?.title || (await fetchPageTitle(cleanedLink));
+    // Fallback to fetching basic page title if AI failed
+    const pageTitle = originalPageTitle || (await fetchPageTitle(cleanedLink));
+    
+    // Use AI-generated title if available, otherwise generate a basic one
+    const displayTitle = aiGeneratedTitle || generateLinkTitle(categorizeLink(cleanedLink), summary);
+    
     const tags = generateTags(cleanedLink);
     const category = categorizeLink(cleanedLink);
-    const summary = summaryPayload?.summary || null;
-    const shortTitle = generateLinkTitle(category, summary);
     const source = determineSource(cleanedLink);
 
     const response = await fetch(process.env.BASE44_ENTITY_URL, {
@@ -762,15 +775,15 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
         api_key: process.env.BASE44_API_KEY,
       },
       body: JSON.stringify({
-        title: shortTitle,
-        pageTitle: title,
-        url: cleanedLink, // ✅ use cleaned link here
+        title: displayTitle,        // AI-generated descriptive title for easy identification
+        pageTitle: pageTitle,       // Original page title for reference
+        url: cleanedLink,
         type: "link",
         tags,
         category,
-        status: "inbox", // ✅ new: default to inbox
+        status: "inbox",
         timestamp: currentTimestamp(),
-        summary,
+        summary,                    // AI-generated summary
         source,
         savedBy,
         savedByNumber: from,
@@ -780,7 +793,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
     const data = await response.json();
     console.log("✅ Base44 saved:", JSON.stringify(data, null, 2));
 
-    return res.send(`<Response><Message>📌 Saved: ${escapeXml(title)}</Message></Response>`);
+    return res.send(`<Response><Message>📌 Saved: ${escapeXml(displayTitle)}</Message></Response>`);
   } catch (err) {
     console.error("❌ Error saving to Base44:", err);
     return res.send("<Response><Message>⚠️ Error saving content.</Message></Response>");

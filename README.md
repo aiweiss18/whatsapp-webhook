@@ -54,13 +54,28 @@ Example: `register Adam Weiss`
 
 ### Saving Content
 
-#### 1. **Save Links**
-Just send any URL and it will be automatically categorized:
+#### 1. **Save Links with AI-Powered Summarization** 🤖
+Just send any URL and it will be automatically analyzed, summarized, and categorized with intelligent titles:
+
 ```
 https://www.linkedin.com/posts/example
 https://www.youtube.com/watch?v=example
 https://twitter.com/user/status/example
 ```
+
+**🚀 Enhanced with AI:**
+- ✨ **Smart Titles** - Descriptive titles that capture what the content is actually about (not just "LinkedIn Post")
+- 📝 **Detailed Summaries** - AI reads the actual content and creates specific, informative summaries
+- 🎯 **Content-Aware** - Different analysis strategies for articles, videos, posts, and podcasts
+- 🔍 **Rich Metadata** - Extracts author, publish date, and key content from pages
+
+**Example outputs:**
+- Instead of: "LinkedIn update"
+  - **You get:** "Sarah Chen on Building AI Startups in 2024"
+- Instead of: "Video highlight"
+  - **You get:** "How to Build a REST API in Node.js - Complete Tutorial"
+- Instead of: "News article"
+  - **You get:** "Why Remote Work Increases Developer Productivity by 20%"
 
 **Automatic categories:**
 - 📎 **LinkedIn Posts** - LinkedIn links
@@ -233,6 +248,30 @@ curl -X POST http://localhost:3000/api/whatsapp-webhook \
   -d "Body=https://example.com"
 ```
 
+### Testing Enhanced Link Summarization
+Test the AI-powered summarization directly with any URL:
+
+```bash
+# Test with any public URL
+node test-summary.js https://www.nytimes.com/2024/01/15/technology/ai.html
+node test-summary.js https://www.youtube.com/watch?v=dQw4w9WgXcQ
+node test-summary.js https://github.com/microsoft/vscode
+
+# You'll see:
+# ✅ ANALYSIS COMPLETE
+# 📝 AI-Generated Title: "Microsoft's Visual Studio Code - Free Code Editor"
+# 📄 Original Page Title: "Visual Studio Code - Code Editing. Redefined"
+# 📋 AI-Generated Summary: "Open-source code editor by Microsoft..."
+```
+
+The test script demonstrates:
+- Specific, descriptive AI-generated titles
+- Detailed summaries with key information
+- Content-aware analysis for different types of links
+- Processing time and metadata extraction
+
+See `ENHANCEMENTS.md` for detailed information about the improvements.
+
 ### Code Style
 - Modern ES modules (`type: "module"`)
 - Two-space indentation
@@ -241,12 +280,11 @@ curl -X POST http://localhost:3000/api/whatsapp-webhook \
 
 ## 📝 Recent Updates
 
+- ✨ **Enhanced AI link summarization** - Major upgrade with descriptive titles, detailed summaries, content extraction, and content-type-aware analysis (see `ENHANCEMENTS.md`)
 - ✅ **AI-powered category detection** - Automatically organizes messages into smart buckets (Books, Movies, Restaurants, Gift Ideas, etc.)
 - ✅ Added `recent`/`last` command to view recent saves grouped by category
 - ✅ Added timestamps showing how long ago items were saved
 - ✅ Support for screenshots via Cloudinary
-- ✅ AI-powered link summarization
-- ✅ Automatic link categorization
 - ✅ User registration and tracking
 
 ## 🔐 Security Notes
