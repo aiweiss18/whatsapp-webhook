@@ -6,6 +6,7 @@ import { JSDOM } from "jsdom"; // parse HTML
 import { summarizeLink } from "./services/summarizeLink.js";
 import { downloadTwilioMedia } from "./services/downloadTwilioMedia.js";
 import { uploadBufferToCloudinary } from "./services/uploadToCloudinary.js";
+import { detectCategory } from "./services/detectCategory.js";
 
 dotenv.config();
 
@@ -80,6 +81,38 @@ function currentTimestamp() {
   } catch (err) {
     console.warn("⚠️ Failed to format timestamp with timezone, falling back to UTC:", err);
     return now.toISOString();
+  }
+}
+
+function formatTimeAgo(timestamp) {
+  if (!timestamp) return "";
+  
+  try {
+    const now = new Date();
+    const then = new Date(timestamp);
+    const seconds = Math.floor((now - then) / 1000);
+    
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) {
+      const mins = Math.floor(seconds / 60);
+      return `${mins}m ago`;
+    }
+    if (seconds < 86400) {
+      const hours = Math.floor(seconds / 3600);
+      return `${hours}h ago`;
+    }
+    if (seconds < 604800) {
+      const days = Math.floor(seconds / 86400);
+      return `${days}d ago`;
+    }
+    if (seconds < 2592000) {
+      const weeks = Math.floor(seconds / 604800);
+      return `${weeks}w ago`;
+    }
+    const months = Math.floor(seconds / 2592000);
+    return `${months}mo ago`;
+  } catch {
+    return "";
   }
 }
 
@@ -566,24 +599,90 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
     }
   }
 
+  // ⚡ RECENT LINKS (show last saved links grouped by category)
+  if (body.toLowerCase() === "recent" || body.toLowerCase() === "last") {
+    try {
+      const resp = await fetch(process.env.BASE44_ENTITY_URL, {
+        method: "GET",
+        headers: { api_key: process.env.BASE44_API_KEY },
+      });
+      const items = await resp.json();
+
+      const filteredItems = items
+        .filter(i => i.type !== "user")
+        .sort((a, b) => {
+          // Sort by timestamp descending (most recent first)
+          const timeA = new Date(a.timestamp || 0).getTime();
+          const timeB = new Date(b.timestamp || 0).getTime();
+          return timeB - timeA;
+        })
+        .slice(0, 10); // Show last 10 items
+
+      if (!filteredItems.length) {
+        return res.send("<Response><Message>📭 No recent items found</Message></Response>");
+      }
+
+      // Group by category
+      const byCategory = {};
+      filteredItems.forEach(item => {
+        const cat = item.category || "Other";
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(item);
+      });
+
+      // Format output
+      const sections = Object.entries(byCategory)
+        .map(([category, categoryItems]) => {
+          const itemsList = categoryItems
+            .map(i => {
+              const contributor = i.savedBy || "Unknown";
+              const timeAgo = formatTimeAgo(i.timestamp);
+              const timeLabel = timeAgo ? ` [${timeAgo}]` : "";
+              return `  • ${i.title || "Untitled"} (${i.source || "Unknown"}) · ${contributor}${timeLabel}`;
+            })
+            .join("\n");
+          return `📁 ${category} (${categoryItems.length})\n${itemsList}`;
+        })
+        .join("\n\n");
+
+      return res.send(`<Response><Message>🕒 Last 10 saves:\n\n${sections}</Message></Response>`);
+    } catch (err) {
+      console.error("❌ Error fetching recent items:", err);
+      return res.send("<Response><Message>⚠️ Could not fetch recent items</Message></Response>");
+    }
+  }
+
   // ⚡ SAVE TEXT MESSAGE AS NOTE (for messages without URLs)
   const match = body.match(urlRegex);
   
   // If message contains text but no URL, save as a note
   if (!match && body && body.trim().length > 0) {
     try {
-      const title = body.slice(0, 60) || "Untitled";
+      // Use AI to detect category, title, and tags
+      let detectedCategory;
+      try {
+        detectedCategory = await detectCategory(body);
+        console.log(`🤖 AI detected: Category="${detectedCategory.category}", Title="${detectedCategory.title}"`);
+      } catch (aiErr) {
+        console.warn("⚠️ AI category detection failed, using fallback:", aiErr.message);
+        detectedCategory = {
+          category: "Notes",
+          title: body.slice(0, 60) || "Untitled",
+          tags: ["note", "whatsapp"],
+        };
+      }
+
       const payload = {
-        title,
-        pageTitle: title,
+        title: detectedCategory.title,
+        pageTitle: detectedCategory.title,
         summary: body,
         content: body,
-        url: `https://whatsapp.local/${slugify(title)}`,
+        url: `https://whatsapp.local/${slugify(detectedCategory.title)}`,
         type: "note",
         status: "inbox",
         timestamp: currentTimestamp(),
-        tags: ["whatsapp", "note"],
-        category: "Notes",
+        tags: [...detectedCategory.tags, "whatsapp"],
+        category: detectedCategory.category,
         savedBy,
         savedByNumber: from,
         source: "WhatsApp Note",
@@ -608,7 +707,7 @@ app.post("/api/whatsapp-webhook", async (req, res) => {
       const data = await response.json();
       console.log("✅ Note saved to Base44:", JSON.stringify(data, null, 2));
 
-      return res.send("<Response><Message>✅ Message saved to Base44.</Message></Response>");
+      return res.send(`<Response><Message>✅ Saved to ${detectedCategory.category}: ${detectedCategory.title}</Message></Response>`);
     } catch (err) {
       console.error("❌ Error saving note to Base44:", err.message);
       return res.send("<Response><Message>⚠️ Error saving message.</Message></Response>");
