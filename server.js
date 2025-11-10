@@ -343,10 +343,18 @@ async function fetchPageTitle(url) {
 // 🟢 Helper: generate tags
 function generateTags(url) {
   const tags = [];
-  if (url.includes("youtube.com")) tags.push("youtube");
-  if (url.includes("spotify.com")) tags.push("podcast");
-  if (url.includes("twitter.com") || url.includes("x.com")) tags.push("twitter");
+  if (url.includes("youtube.com") || url.includes("youtu.be")) tags.push("youtube");
+  if (url.includes("spotify.com")) tags.push("spotify");
+  if (url.includes("twitter.com") || url.includes("x.com")) tags.push("x", "twitter");
   if (url.includes("linkedin.com") || url.includes("lnkd.in")) tags.push("linkedin");
+  if (url.includes("facebook.com")) tags.push("facebook");
+  if (url.includes("instagram.com")) tags.push("instagram");
+  if (url.includes("tiktok.com")) tags.push("tiktok");
+  if (url.includes("reddit.com")) tags.push("reddit");
+  if (url.includes("github.com")) tags.push("github");
+  if (url.includes("medium.com")) tags.push("medium");
+  if (url.includes("substack.com")) tags.push("substack");
+  if (url.includes("podcasts.apple.com")) tags.push("podcast", "apple");
   if (tags.length === 0) tags.push("unlabeled");
   return tags;
 }
@@ -354,27 +362,36 @@ function generateTags(url) {
 // 🟢 Helper: categorize link
 function categorizeLink(url) {
   const u = url.toLowerCase();
-  if (u.includes("linkedin.com") || u.includes("lnkd.in")) return "LinkedIn Posts";
-  if (
-    u.includes("twitter.com") ||
-    u.includes("x.com") ||
-    u.includes("facebook.com") ||
-    u.includes("tiktok.com") ||
-    u.includes("instagram.com")
-  )
-    return "Social";
-  if (u.includes("youtube.com") || u.includes("youtu.be")) return "Videos";
-  if (u.includes("spotify.com") || u.includes("podcasts.apple.com") || u.includes("podcast"))
-    return "Podcasts";
-  if (
-    u.includes("nytimes.com") ||
-    u.includes("wsj.com") ||
-    u.includes("bbc.com") ||
-    u.includes("cnn.com") ||
-    u.includes("bloomberg.com") ||
-    u.includes("reuters.com")
-  )
-    return "News Articles";
+  
+  // Social Media Platforms - Each gets its own bucket
+  if (u.includes("linkedin.com") || u.includes("lnkd.in")) return "LinkedIn";
+  if (u.includes("twitter.com") || u.includes("x.com")) return "X/Twitter";
+  if (u.includes("facebook.com")) return "Facebook";
+  if (u.includes("instagram.com")) return "Instagram";
+  if (u.includes("tiktok.com")) return "TikTok";
+  if (u.includes("reddit.com")) return "Reddit";
+  
+  // Content Platforms
+  if (u.includes("youtube.com") || u.includes("youtu.be")) return "YouTube";
+  if (u.includes("spotify.com")) return "Spotify";
+  if (u.includes("podcasts.apple.com")) return "Apple Podcasts";
+  
+  // Publishing Platforms
+  if (u.includes("medium.com")) return "Medium";
+  if (u.includes("substack.com")) return "Substack";
+  
+  // Developer Platforms
+  if (u.includes("github.com")) return "GitHub";
+  
+  // News Sites - Each gets its own bucket
+  if (u.includes("nytimes.com")) return "New York Times";
+  if (u.includes("wsj.com")) return "Wall Street Journal";
+  if (u.includes("bbc.com")) return "BBC";
+  if (u.includes("cnn.com")) return "CNN";
+  if (u.includes("bloomberg.com")) return "Bloomberg";
+  if (u.includes("reuters.com")) return "Reuters";
+  
+  // Generic fallback
   return "Other";
 }
 
@@ -428,11 +445,24 @@ function generateLinkTitle(category, summaryText) {
     return "News article";
 
   const categoryMap = {
-    "LinkedIn Posts": "LinkedIn update",
-    Social: "Social update",
-    Videos: "Video highlight",
-    Podcasts: "Podcast episode",
-    "News Articles": "News article",
+    LinkedIn: "LinkedIn post",
+    "X/Twitter": "Tweet",
+    Facebook: "Facebook post",
+    Instagram: "Instagram post",
+    TikTok: "TikTok video",
+    Reddit: "Reddit post",
+    YouTube: "YouTube video",
+    Spotify: "Spotify content",
+    "Apple Podcasts": "Podcast episode",
+    Medium: "Medium article",
+    Substack: "Substack post",
+    GitHub: "GitHub repository",
+    "New York Times": "NYT article",
+    "Wall Street Journal": "WSJ article",
+    BBC: "BBC article",
+    CNN: "CNN article",
+    Bloomberg: "Bloomberg article",
+    Reuters: "Reuters article",
     Other: "Saved link",
   };
 

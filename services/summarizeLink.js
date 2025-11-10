@@ -140,8 +140,14 @@ async function createOpenAiSummary({ url, title, description, author, publishDat
   let contentType = "article";
   if (urlLower.includes("linkedin.com")) contentType = "linkedin";
   else if (urlLower.includes("twitter.com") || urlLower.includes("x.com")) contentType = "tweet";
+  else if (urlLower.includes("facebook.com")) contentType = "facebook";
+  else if (urlLower.includes("instagram.com")) contentType = "instagram";
+  else if (urlLower.includes("tiktok.com")) contentType = "tiktok";
+  else if (urlLower.includes("reddit.com")) contentType = "reddit";
   else if (urlLower.includes("youtube.com") || urlLower.includes("youtu.be")) contentType = "video";
   else if (urlLower.includes("spotify.com") || urlLower.includes("podcast")) contentType = "podcast";
+  else if (urlLower.includes("medium.com")) contentType = "medium";
+  else if (urlLower.includes("substack.com")) contentType = "substack";
   else if (urlLower.includes("github.com")) contentType = "github";
 
   const contextParts = [
@@ -157,8 +163,14 @@ async function createOpenAiSummary({ url, title, description, author, publishDat
   const typeInstructions = {
     linkedin: "This is a LinkedIn post. Summarize the key professional insight, announcement, or discussion point. Focus on the main value or takeaway.",
     tweet: "This is a Twitter/X post. Capture the core message, opinion, or news being shared in a clear, concise way.",
+    facebook: "This is a Facebook post. Capture the main message, update, or content being shared.",
+    instagram: "This is an Instagram post. Describe the visual content and any caption or message.",
+    tiktok: "This is a TikTok video. Describe what the video is about and the main content or entertainment value.",
+    reddit: "This is a Reddit post or discussion. Summarize the main topic, question, or discussion point.",
     video: "This is a video. Describe what the video is about, who created it, and what viewers will learn or experience.",
     podcast: "This is a podcast episode. Summarize the main topic, guests, or key themes discussed.",
+    medium: "This is a Medium article. Extract the main argument, insights, or key information presented.",
+    substack: "This is a Substack post. Summarize the main points, arguments, or insights from the newsletter.",
     github: "This is a GitHub repository or discussion. Describe what the project does or what the discussion is about.",
     article: "This is an article or webpage. Extract the main topic, key argument, or primary information being presented.",
   };
